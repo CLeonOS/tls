@@ -79,6 +79,39 @@ typedef struct {
     uint32_t flags;
 } x509_crt_verify_chain_item;
 
+#if defined(CLEONOS_MBEDTLS_RELAXED_X509_EXTENSIONS)
+/*
+ * CLeonOS currently runs TLS without certificate verification because it does
+ * not have CA storage or trusted time yet. Keep handshake compatibility with
+ * real-world certificates by ignoring extension parser failures while still
+ * rejecting allocator failures.
+ */
+static int cleonos_x509_can_skip_extension_parse_error(int ret)
+{
+    int positive_ret;
+    int invalid_extensions_high;
+    int asn1_alloc_low;
+
+    if (ret >= 0) {
+        return 0;
+    }
+
+    positive_ret = -ret;
+    invalid_extensions_high = -MBEDTLS_ERR_X509_INVALID_EXTENSIONS;
+    asn1_alloc_low = -MBEDTLS_ERR_ASN1_ALLOC_FAILED;
+
+    if ((positive_ret & 0x007F) == (asn1_alloc_low & 0x007F)) {
+        return 0;
+    }
+
+    if ((positive_ret & 0xFF80) == (invalid_extensions_high & 0xFF80)) {
+        return 1;
+    }
+
+    return (ret == MBEDTLS_ERR_X509_FEATURE_UNAVAILABLE) ? 1 : 0;
+}
+#endif
+
 /*
  * Max size of verification chain: end-entity + intermediates + trusted root
  */
@@ -1257,8 +1290,16 @@ static int x509_crt_parse_der_core(mbedtls_x509_crt *crt,
     if (crt->version == 3) {
         ret = x509_get_crt_ext(&p, end, crt, cb, p_ctx);
         if (ret != 0) {
-            mbedtls_x509_crt_free(crt);
-            return ret;
+#if defined(CLEONOS_MBEDTLS_RELAXED_X509_EXTENSIONS)
+            if (cleonos_x509_can_skip_extension_parse_error(ret)) {
+                p = end;
+                ret = 0;
+            } else
+#endif
+            {
+                mbedtls_x509_crt_free(crt);
+                return ret;
+            }
         }
     }
 
