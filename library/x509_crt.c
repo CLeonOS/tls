@@ -2740,7 +2740,7 @@ find_parent:
 #endif
 #elif defined(__sun)
 /* Solaris requires -lsocket -lnsl for inet_pton() */
-#elif defined(__has_include)
+#elif defined(__has_include) && !defined(MBEDTLS_TEST_SW_INET_PTON)
 #if __has_include(<sys/socket.h>)
 #include <sys/socket.h>
 #endif
